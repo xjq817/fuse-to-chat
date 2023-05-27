@@ -90,7 +90,6 @@ static int remove_in_dir(struct node *cur, struct node *del){
 }
 
 static struct node *name_node(struct node *cur, const char *name){
-	// printf("find name:%s in dir:%s\n", name, cur->name);
 	if (cur->type == file) return NULL;
 	cur = cur->head->next;
 	while(cur){
@@ -98,7 +97,6 @@ static struct node *name_node(struct node *cur, const char *name){
 			return cur;
 		cur = cur->next;
 	}
-	// printf("can not find\n");
 	return NULL;
 }
 
@@ -108,12 +106,10 @@ static struct node *get_node(const char *path){
 	for (int l = 1, r; l < len; l = r + 1){
 		r = l;
 		while(r < len && path[r] != '/') r++;
-		if (r <= l + 1) break;
 		char *name = (char *)malloc(sizeof(char) * (r - l + 1));
 		for (int i = 0; i < r - l; i++)
 			name[i] = path[i + l];
 		name[r - l] = '\0';
-		// printf("cur:%s name:%s\n",cur->name,name);
 		cur = name_node(cur, name);
 		free(name);
 		if (!cur) return NULL;
@@ -132,11 +128,7 @@ static int chat_getattr(const char *path, struct stat *stbuf, struct fuse_file_i
 	int res = 0;
 	memset(stbuf, 0, sizeof(struct stat));
 
-	// printf("path:%s\n", path);
-
 	struct node *cur = get_node(path);
-
-	// if (cur) printf("name:%s\n", cur->name);
 
 	if (!cur) res = -ENOENT;
 	else if (cur->type == dir){
@@ -193,8 +185,7 @@ static int chat_mkdir(const char *path, mode_t mode){
 	old[lst] = '\0';
 	struct node *cur = get_node(old);
 	free(old);
-	if (!cur) return -ENOENT;
-	else if (cur->type == file) return -ENOTDIR;
+	if (cur != root) return -EPERM;
 	
 	struct node *new = node_init(name, "", dir);
 	return insert_in_dir(cur, new);
@@ -223,12 +214,62 @@ static int chat_write(const char *path, const char *content, size_t size,
 					  off_t offset, struct fuse_file_info* fi){
 	(void) fi;
 
-	struct node *cur = get_node(path);
-	if (!cur) return -ENOENT;
-	else if (cur->type == dir) return -EPERM;
+	int len = strlen(path);
 
-	cur->contents = (char *)malloc(sizeof(char) * (size + offset + 1));
-	memcpy(cur->contents + offset, content, size);
+	char *from_name = (char *)malloc(sizeof(char) * (len + 1));
+	char *from_dir = (char *)malloc(sizeof(char) * (len + 1));
+	char *to_name = (char *)malloc(sizeof(char) * (len + 1));
+	char *to_dir = (char *)malloc(sizeof(char) * (len + 1));
+
+	int lst = -1;
+	for (int i = len - 2; i >= 0; i--){
+		if (path[i] == '/'){
+			lst = i;
+			break;
+		}
+	}
+	if (lst == -1) return -EPERM;
+	lst++;
+	for (int i = lst; i < len; i++) to_name[i - lst] = path[i];
+	to_name[len - lst] = '\0';
+	if (path[len - 1] == '/') to_name[len - 1 - lst] = '\0';
+
+	len = strlen(to_name);
+	to_dir[0] = '/';
+	for (int i = 0; i < len; i++) to_dir[i + 1] = to_name[i];
+	to_dir[len + 1] = '\0';
+
+	lst--;
+	for (int i = 0; i < lst; i++) from_dir[i] = path[i];
+	from_dir[lst] = '\0';
+	len = lst;
+	lst = -1;
+	for (int i = len - 2; i >= 0; i--){
+		if (path[i] == '/'){
+			lst = i;
+			break;
+		}
+	}
+	if (lst != 0) return -EPERM;
+	for (int i = 0; i < len - 1; i++) from_name[i] = from_dir[i + 1];
+	from_name[len - 1] = '\0';
+
+	struct node *to_dir_node = get_node(to_dir);
+	if (!to_dir_node) return -ENOENT;
+	else if (to_dir_node->type == file) return -EPERM;
+
+	struct node *from_node = name_node(to_dir_node, from_name);
+	if (!from_node){
+		from_node = node_init(from_name, "", file);
+		insert_in_dir(to_dir_node, from_node);
+	}
+
+	char *from_content = from_node->contents;
+	offset = strlen(from_content);
+	from_node->contents = (char *)malloc(sizeof(char) * (size + offset + 1));
+	memcpy(from_node->contents, from_content, offset);
+	memcpy(from_node->contents + offset, content, size);
+
 	return size;
 }
 
