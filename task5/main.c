@@ -32,13 +32,12 @@ int main(){
         return 1;
     }
     
-    struct flock fl;
+    struct flock fl  = {F_WRLCK, SEEK_SET,0,0};
 
     if(pid > 0){
         // PARENT PROCESS
         //set the lock
-        struct flock lock_p = {F_WRLCK, SEEK_SET,0,0};
-        int ret = fcntl(fd, F_SETLKW, &lock_p);
+        int ret = fcntl(fd, F_SETLKW, &fl);
         if(ret < 0){
             printf("error in fcntl");
             return 1;
@@ -50,8 +49,8 @@ int main(){
         write(fd,data_b,len_b);
         
         //unlock
-        lock_p.l_type = F_UNLCK;
-        fcntl(fd,F_SETLK,&lock_p);
+        fl.l_type = F_UNLCK;
+        fcntl(fd,F_SETLK,&fl);
         sleep(3);
 
         lseek(fd,0,SEEK_SET);
@@ -66,9 +65,8 @@ int main(){
     } else {
         // CHILD PROCESS
         sleep(2);
-        struct flock lock_s = {F_WRLCK,SEEK_SET, 0,0};
         // get the lock
-        int ret = fcntl(dup_fd,F_SETLKW,&lock_s);
+        int ret = fcntl(dup_fd,F_SETLKW,&fl);
         if(ret < 0){
             printf("error in fcntl");
             return 1;
